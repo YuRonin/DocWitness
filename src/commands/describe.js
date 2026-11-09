@@ -22,6 +22,7 @@ const store = require('../inspect/store');
 const { createProjectStore } = require('../store/project');
 const { displayPath } = require('../util/fsx');
 const { lintProse, formatStyle } = require('../generate/style-lint');
+const { readControls, resolveControlRefs } = require('../inspect/controls');
 
 const KNOWN_FLAGS = new Set(['projectRoot', 'input', 'id', 'title', 'purpose', 'actions', 'source', 'includeInManual', 'lifecycle', 'json', 'help']);
 
@@ -49,6 +50,13 @@ manual describe —— 把页面的源码分析结果写回页面模型
       }
     ]
   }
+
+  target 可以直接引用静态控件清单（manual inspect 生成的 .manual/controls.json）：
+    "target": { "control": "ctl-3f2a9c1b7e04" }              → 换成 { role, name, exact: true }
+    "target": { "control": "ctl-…", "within": { "control": "ctl-…" } }
+  清单里的名称来自源码字面量、aria-label 与语言包，比手写 role + name 可靠；
+  名称来自变量的控件在清单的 dynamic 里，读源码后手写。手写的 role + name 不在清单里时给出提示
+  （config 的 inspect.controls.strict: true 时拒绝写入）。
 
   id 必填且必须已存在于 .manual/pages/。
   title / purpose / detectedActions / source / includeInManual / lifecycle 都可选，
@@ -131,6 +139,17 @@ function readInput(inputPath, errors) {
     errors.push(`--input 不是合法 JSON: ${e.message}`);
     return null;
   }
+}
+
+/**
+ * 把 entry 里的 { control: id } 换成清单中的精确定位，并核对手写的 role + name（src/inspect/controls.js）。
+ * entry 不是对象或缺 id 时原样返回，交给 validateEntry 报错。
+ */
+function resolveEntryControls(entry, index, controls, settings = {}) {
+  if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string') return { entry, errors: [], warnings: [] };
+  const pageControls = controls?.pages?.[entry.id] || null;
+  const { value, errors, warnings } = resolveControlRefs(entry, pageControls, { where: `pages[${index}]`, strict: settings.strict === true });
+  return { entry: value, errors, warnings };
 }
 
 /** 校验一条页面分析。errors 累积，返回归一化后的补丁或 null。 */
@@ -336,10 +355,16 @@ function run(argv) {
 
   const byId = new Map(existing.pages.map((p) => [p.id, p]));
   const errors = [];
+  const warnings = [];
   const patches = [];
   const seen = new Set();
+  const controls = readControls(stateDirAbs);
 
-  payload.pages.forEach((entry, i) => {
+  payload.pages.forEach((raw, i) => {
+    const resolved = resolveEntryControls(raw, i, controls, config.inspect.controls);
+    errors.push(...resolved.errors);
+    warnings.push(...resolved.warnings);
+    const entry = resolved.entry;
     const patch = validateEntry(entry, i, new Set(byId.keys()), errors);
     if (!patch) return;
     if (seen.has(patch.id)) {
@@ -393,6 +418,7 @@ function run(argv) {
             confidence: p.confidence,
           })),
           remaining: remaining.map((p) => ({ id: p.id, route: p.route })),
+          warnings,
           featureInventory: { file: featureInventory.file, pending: featureInventory.snapshot.pending },
         },
         null,
@@ -410,6 +436,11 @@ function run(argv) {
         L.push('      ↑ title 与 purpose 都写了才算分析完成');
       }
     }
+    if (warnings.length) {
+      L.push('');
+      L.push(`  ⚠ ${warnings.length} 条定位提示：`);
+      for (const w of warnings) L.push(`    - ${w}`);
+    }
     L.push('');
     L.push(`  索引已重建  ${displayPath(projectFile, projectRoot)}`);
     if (remaining.length > 0) {
@@ -424,4 +455,4 @@ function run(argv) {
   return 0;
 }
 
-module.exports = { run, HELP, KNOWN_FLAGS, validateEntry, applyPatch };
+module.exports = { run, HELP, KNOWN_FLAGS, validateEntry, applyPatch, resolveEntryControls };

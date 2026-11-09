@@ -54,6 +54,21 @@ function checkAnalysis(request, output) {
   return output;
 }
 
+/**
+ * 分类计划响应 → layout 迁移输入。features / figures 里的 { control: id } 换成静态控件清单中的精确定位；
+ * 引用不存在的控件直接拒绝，手写的 role + name 不在清单里只在 strict 模式下拒绝。
+ */
+function resolvedLayoutPayload({ stateDirAbs, config, request, output }) {
+  const { readControls, resolveControlRefs } = require('../inspect/controls');
+  const pageId = request.subject.id;
+  const page = { id: pageId, ...Object.fromEntries(Object.entries(output).filter(([k]) => k !== 'scenarios')) };
+  const pageControls = readControls(stateDirAbs)?.pages?.[pageId] || null;
+  const strict = config.inspect?.controls?.strict === true;
+  const resolved = resolveControlRefs({ page, scenarios: output.scenarios || [] }, pageControls, { where: 'output', strict });
+  if (resolved.errors.length) throw invalid(`分类计划的控件引用无效：${resolved.errors.join('；')}`);
+  return { pages: [resolved.value.page], scenarios: resolved.value.scenarios };
+}
+
 /** 请求所依据的事实是否仍然成立。 */
 function checkStillCurrent({ projectRoot, config, request, facts }) {
   for (const file of request.files.filter((f) => f.root !== 'tool')) {
@@ -111,6 +126,7 @@ function submitModelResponse({ projectRoot, config, runId, requestId, response }
   if (task.status !== 'waiting_input') throw invalid(`任务 ${task.id} 当前是 ${task.status}，没有在等待这份输入。`);
 
   let facts = null;
+  let layoutPayload = null;
   if (request.kind === 'rewrite') {
     const factsFile = request.files.find((f) => f.path.endsWith('.facts.json'));
     facts = JSON.parse(fs.readFileSync(path.join(projectRoot, factsFile.path), 'utf8'));
@@ -120,7 +136,8 @@ function submitModelResponse({ projectRoot, config, runId, requestId, response }
   } else if (request.kind === 'layout') {
     const allowed = new Set(request.output.allowedFields);
     if (!response.output || Object.keys(response.output).some(k => !allowed.has(k))) throw invalid('分类计划含未授权字段');
-    require('../annotations/layout-migration').prepareLayouts({ projectRoot, config, payload: { pages: [{ id: request.subject.id, ...Object.fromEntries(Object.entries(response.output).filter(([k]) => k !== 'scenarios')) }], scenarios: response.output.scenarios || [] } });
+    layoutPayload = resolvedLayoutPayload({ stateDirAbs, config, request, output: response.output });
+    require('../annotations/layout-migration').prepareLayouts({ projectRoot, config, payload: layoutPayload });
   } else if (request.kind === 'binding') {
     const choices = response.output?.choices;
     if (!choices || Object.keys(response.output).some(k => k !== 'choices')) throw invalid('绑定响应需要 output.choices');
@@ -135,7 +152,7 @@ function submitModelResponse({ projectRoot, config, runId, requestId, response }
   const { lease } = runStore.open(runId);
   try {
     if (request.kind === 'layout') {
-      require('../annotations/layout-migration').applyLayouts({ projectRoot, config, payload: { pages: [{ id: request.subject.id, ...Object.fromEntries(Object.entries(response.output).filter(([k]) => k !== 'scenarios')) }], scenarios: response.output.scenarios || [] } });
+      require('../annotations/layout-migration').applyLayouts({ projectRoot, config, payload: layoutPayload });
     }
     if (request.kind === 'analyze') {
       const projectStore = createProjectStore({ stateDirAbs, docsOutputDir: config.docs.outputDir });

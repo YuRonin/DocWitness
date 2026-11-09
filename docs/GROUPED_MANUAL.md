@@ -56,7 +56,7 @@ layout 请求的 `output` 是单页补丁，可包含 title、purpose、features
 | 对象 | 字段与约束 |
 |---|---|
 | Feature | `id`/`feature_id` 沿用稳定功能身份；label；priority 为 required/optional/skip/undecided；contentKind 为 operation/concept/reference；sourceRefs；operations；旧 guide 必须一对一保留 guideId |
-| Operation | 页面内唯一安全 slug id；instruction；evidenceRequirement；可选 targetHint（现有 Target schema）、bindingIntent（role、name）、risk、sourceRefs、taskId、claimId、noImageReason；outcome（做完这一步看到什么）与 outcomeFigure（同小节 purpose=state 的图片 id）必须成对出现 |
+| Operation | 页面内唯一安全 slug id；instruction；evidenceRequirement；可选 targetHint（现有 Target schema；可写 `{ "control": "<id>" }` 引用 `.manual/controls.json` 的静态控件，提交时换成精确 role + name）、bindingIntent（role、name）、risk、sourceRefs、taskId、claimId、noImageReason；outcome（做完这一步看到什么）与 outcomeFigure（同小节 purpose=state 的图片 id）必须成对出现 |
 | Section | 唯一 slug id；title、goal（一句使用场景）；featureRefs、figureRefs；可选 tips（不属于主流程的提示，字符串数组）。一个功能归属一个小节，多状态图放同一小节；required 必须收录，skip/undecided 不能进入正文 |
 | FAQ | 页面级 `faq`：`[{ id, question, answer }]`，渲染在页面末尾「常见问题」 |
 | Figure | 唯一 slug id；sectionId；operationRefs；caption；purpose 为 entry/state/overview；scenarioId 默认 page-<id>，checkpointId 默认 default；frame |

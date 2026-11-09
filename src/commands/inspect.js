@@ -73,6 +73,20 @@ function fail(errors, { json }) {
 }
 
 /** 待分析清单：AI 接下来该读哪些文件、补哪些页面。 */
+/** 控件清单摘要：每页可引用控件数、名称不确定的控件数与解析失败的文件。 */
+function controlsSummary(controls) {
+  if (!controls) return null;
+  const pages = Object.entries(controls.snapshot.pages || {});
+  return {
+    file: controls.file,
+    locale: controls.snapshot.locale,
+    localeFiles: controls.snapshot.localeFiles,
+    total: pages.reduce((n, [, p]) => n + p.controls.length, 0),
+    dynamic: pages.reduce((n, [, p]) => n + p.dynamic.length, 0),
+    pages: Object.fromEntries(pages.map(([id, p]) => [id, { controls: p.controls.length, dynamic: p.dynamic.length, errors: p.errors.length }])),
+  };
+}
+
 function buildWorklist(pages) {
   return pages
     .filter((p) => p.includeInManual !== false)
@@ -105,7 +119,7 @@ function renderDiscovery(discovery) {
 }
 
 function renderSummary(ctx) {
-  const { meta, pages, added, updated, removed, excluded, stale, worklist, projectRoot, projectFile, pruned, renamed = [], renameCandidates = [] } = ctx;
+  const { meta, pages, added, updated, removed, excluded, stale, worklist, projectRoot, projectFile, pruned, renamed = [], renameCandidates = [], controls = null } = ctx;
   const L = [];
 
   L.push('');
@@ -174,6 +188,10 @@ function renderSummary(ctx) {
 
   L.push('');
   L.push(`  索引        ${displayPath(projectFile, projectRoot)}`);
+  if (controls) {
+    const sum = controlsSummary(controls);
+    L.push(`  控件清单    ${displayPath(controls.file, projectRoot)}（${sum.total} 个可引用控件，${sum.dynamic} 个名称需读源码${sum.locale ? `，语言 ${sum.locale}` : ''}）`);
+  }
   L.push(`  页面详情    ${displayPath(path.dirname(projectFile), projectRoot)}/pages/`);
   L.push('');
 
@@ -244,7 +262,7 @@ function run(argv) {
     }
     return fail([`${e.code || 'model-commit-failed'}: ${e.message}`], { json });
   }
-  const { detected, scan, result, fingerprinted, impact, staleTasks, pruned, meta, graphRevision, written, projectFile, stateDirAbs, featureInventory } = refreshed;
+  const { detected, scan, result, fingerprinted, impact, staleTasks, pruned, meta, graphRevision, written, projectFile, stateDirAbs, featureInventory, controls } = refreshed;
   const warnings = [...loaded.warnings, ...refreshed.dependencyWarnings];
   const worklist = buildWorklist(result.pages);
 
@@ -296,6 +314,8 @@ function run(argv) {
           conflicts: scan.conflicts,
           worklist,
           featureInventory: { file: featureInventory.file, pending: featureInventory.snapshot.pending, pages: featureInventory.snapshot.pages },
+          // 静态控件清单：写 target 时用 { "control": "<id>" } 引用，名称不确定的控件在 dynamic 里（附源码位置）
+          controls: controlsSummary(controls),
           warnings,
           staleTasks: staleTasks.staleIds,
           writtenFiles: written,
@@ -318,7 +338,7 @@ function run(argv) {
         meta, pages: result.pages, added: result.added, updated: result.updated,
         removed: result.removed, excluded: result.excluded, stale: result.stale,
         renamed: result.renamed, renameCandidates: result.renameCandidates,
-        worklist, projectRoot, projectFile, pruned,
+        worklist, projectRoot, projectFile, pruned, controls,
       }) + '\n'
     );
   }

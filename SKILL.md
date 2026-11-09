@@ -36,7 +36,7 @@ manual inspect                                # 扫描路由与源码依赖，�
 manual describe --input <分析.json>           # 你读完源码后，写回每页的标题、用途、主要操作和 guide
 ```
 
-`inspect` 支持 Next.js（App Router 与 Pages Router）、React Router 对象路由与 Vue Router 路由表；其它框架会明确提示暂不支持。看 `--json` 的 `discovery`：完整性不是 `complete` 时，按 `discovery.unresolved` 读对应的路由源码，整理成候选用 `manual inspect --routes-input <候选.json>` 提交（只能补未解析的记录或新增未发现的路由，格式见[命令细节](references/command-workflows.md)），不要直接改页面文件里的 route / entry。`describe` 的输入格式见[命令细节](references/command-workflows.md)。`purpose` 和 `guide` 会原样进入手册，按[写作规范](references/manual-writing-style.md)第一、三节写：说清用途、选项区别和操作后的变化，「」只给要操作的控件；套话、“您”、连串「」会被拒绝。
+`inspect` 支持 Next.js（App Router 与 Pages Router）、React Router 对象路由与 Vue Router 路由表；其它框架会明确提示暂不支持。看 `--json` 的 `discovery`：完整性不是 `complete` 时，按 `discovery.unresolved` 读对应的路由源码，整理成候选用 `manual inspect --routes-input <候选.json>` 提交（只能补未解析的记录或新增未发现的路由，格式见[命令细节](references/command-workflows.md)），不要直接改页面文件里的 route / entry。`describe` 的输入格式见[命令细节](references/command-workflows.md)。写 `target` / `targetHint` 时先查 `.manual/controls.json`（inspect 从源码提取的控件清单），用 `{ "control": "<id>" }` 引用，不要自己拼控件名；只有清单 `dynamic` 里的控件（名称来自变量）才手写 role + name。`purpose` 和 `guide` 会原样进入手册，按[写作规范](references/manual-writing-style.md)第一、三节写：说清用途、选项区别和操作后的变化，「」只给要操作的控件；套话、“您”、连串「」会被拒绝。
 
 ## 2. 建模：要写哪些任务
 

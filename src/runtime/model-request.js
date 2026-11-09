@@ -81,6 +81,26 @@ function rewriteContent(ctx, task) {
   };
 }
 
+/**
+ * 页面的静态控件清单（src/inspect/controls.js），给模型写定位用：从 controls 里选 id，
+ * 名称不确定的 dynamic 控件附源码位置，读源码后手写。清单缺失时为 null（旧项目没跑过新版 inspect）。
+ */
+function pageControlFacts(ctx, pageId) {
+  const snapshot = require('../inspect/controls').readControls(ctx.stateDirAbs);
+  const page = snapshot?.pages?.[pageId];
+  if (!page) return null;
+  return {
+    locale: snapshot.locale || null,
+    controls: page.controls.slice(0, 200).map((c) => ({ id: c.id, role: c.role, name: c.name, ...(c.occurrences > 1 ? { occurrences: c.occurrences } : {}), at: c.at[0] })),
+    dynamic: page.dynamic.slice(0, 100).map((d) => ({ role: d.role, reason: d.reason, at: d.at, ...(d.partial ? { partial: d.partial } : {}), ...(d.i18nKey ? { i18nKey: d.i18nKey } : {}) })),
+    truncated: page.controls.length > 200 || page.dynamic.length > 100,
+  };
+}
+
+const CONTROL_INSTRUCTION = '写定位（targetHint / target / within）时优先引用 facts.controls 里的控件：{ "control": "<id>" }，程序会换成精确的 role + name；'
+  + '不要凭源码自己拼控件名（i18n key、图标、变量都会让名称和页面不一致）。occurrences > 1 的控件加 within 限定区域。'
+  + '要用的控件不在 controls 里（名称来自变量，见 facts.controls.dynamic）时才手写 role + name，或用 bindingIntent 描述待选控件。';
+
 /** 页面语义分析请求：页面入口与依赖源码（带 hash），输出标题 / 用途 / 可见操作。 */
 function analyzeContent(ctx, task) {
   const subject = task.input.subject;
@@ -92,9 +112,9 @@ function analyzeContent(ctx, task) {
   return {
     inputHash: revisionOf({ task: task.inputHash, sourceRevision: page.analysis?.sourceRevision || null }),
     files,
-    facts: { pageId: page.id, route: page.route, title: page.title || null, purpose: page.purpose || null, detectedActions: page.detectedActions || [] },
+    facts: { pageId: page.id, route: page.route, title: page.title || null, purpose: page.purpose || null, detectedActions: page.detectedActions || [], controls: pageControlFacts(ctx, page.id) },
     output: { type: 'page-analysis', allowedFields: ['title', 'purpose', 'detectedActions'], shape: '{ "title": "...", "purpose": "...", "detectedActions": ["..."] }' },
-    instructions: `只根据列出的源码文件判断页面标题、用途与可见操作；不确定就不写，不编造业务规则。purpose 按 ${STYLE_GUIDE} 第三节导语写一两句。`,
+    instructions: `只根据列出的源码文件判断页面标题、用途与可见操作；不确定就不写，不编造业务规则。purpose 按 ${STYLE_GUIDE} 第三节导语写一两句。detectedActions 里「」括起的控件名用 facts.controls 中的 name 原文。`,
   };
 }
 
@@ -105,9 +125,9 @@ function layoutContent(ctx, task) {
   const files = [fileEntry(ctx.projectRoot, modelFile), ...[...new Set(candidates)].slice(0, LIMITS.maxFiles - 1).map(f => fileEntry(ctx.projectRoot, f))].filter(Boolean);
   return {
     inputHash: revisionOf({ task: task.inputHash, files }), files,
-    facts: { page: require('../model/revision').pickDefinitionFields('page', page), migration: require('../annotations/layout-migration').proposalFor(page), schemaReference: 'docs/GROUPED_MANUAL.md' },
+    facts: { page: require('../model/revision').pickDefinitionFields('page', page), migration: require('../annotations/layout-migration').proposalFor(page), schemaReference: 'docs/GROUPED_MANUAL.md', controls: pageControlFacts(ctx, page.id) },
     output: { type: 'manual-layout', allowedFields: ['title', 'purpose', 'features', 'sections', 'figures', 'states', 'variants', 'scenarios', 'faq'], shape: '{ "features": [...], "sections": [...], "figures": [...], "scenarios": [...], "faq": [...] }' },
-    instructions: '阅读 docs/GROUPED_MANUAL.md 与 references/manual-writing-style.md 第五节“分类页面”，站在读者角度按任务流程分节：一节只讲一条读者能独立完成的子流程（如「使用密码登录」「使用短信验证码登录」「找回密码」各成一节），goal 写一句使用场景；步骤按读者操作顺序排列，正文序号即截图标注号，不要重复描述；每节最后一步用 outcome 写清做完看到什么、怎么判断成功，并用 outcomeFigure 指向证明该状态的状态图；不属于主流程的提示写进 sections[].tips，常见问题写进 faq。验证码、注册、重置密码等写操作用 mock Fixture 拦截，setup 动作标 mocked: true，把流程拍到成功状态。保留每项旧 guide 的 feature.guideId 和功能身份，不删减原有操作。每个已收录功能用 operations 定义动作及证据需求；图片引用操作、Scenario、检查点。默认每张 1～3 个标注；图片保留原尺寸截图，用不同小节的标注区分重点，frame 一般用 auto，只有读者确实只需看某个区域时才用 region。菜单、拖放、产物使用不同真实状态。显式 targetHint 是线索，无法确定时用 bindingIntent 描述待选控件。concept/reference 的无图说明必须有来源和理由。只提交源码支持的事实，风险动作沿用任务授权；新 Scenario 的 setup 只能是 read/local 动作，或由 kind: mock 的 Fixture 拦截的 mocked: true 写操作，不能真实执行业务写入。不能修改已有 Scenario，使用新 id 或引用已有定义。',
+    instructions: '阅读 docs/GROUPED_MANUAL.md 与 references/manual-writing-style.md 第五节“分类页面”，站在读者角度按任务流程分节：一节只讲一条读者能独立完成的子流程（如「使用密码登录」「使用短信验证码登录」「找回密码」各成一节），goal 写一句使用场景；步骤按读者操作顺序排列，正文序号即截图标注号，不要重复描述；每节最后一步用 outcome 写清做完看到什么、怎么判断成功，并用 outcomeFigure 指向证明该状态的状态图；不属于主流程的提示写进 sections[].tips，常见问题写进 faq。验证码、注册、重置密码等写操作用 mock Fixture 拦截，setup 动作标 mocked: true，把流程拍到成功状态。保留每项旧 guide 的 feature.guideId 和功能身份，不删减原有操作。每个已收录功能用 operations 定义动作及证据需求；图片引用操作、Scenario、检查点。默认每张 1～3 个标注；图片保留原尺寸截图，用不同小节的标注区分重点，frame 一般用 auto，只有读者确实只需看某个区域时才用 region。菜单、拖放、产物使用不同真实状态。显式 targetHint 是线索，无法确定时用 bindingIntent 描述待选控件。concept/reference 的无图说明必须有来源和理由。只提交源码支持的事实，风险动作沿用任务授权；新 Scenario 的 setup 只能是 read/local 动作，或由 kind: mock 的 Fixture 拦截的 mocked: true 写操作，不能真实执行业务写入。不能修改已有 Scenario，使用新 id 或引用已有定义。' + CONTROL_INSTRUCTION,
   };
 }
 

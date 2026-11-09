@@ -81,6 +81,7 @@ const FILES = [
   'task-first-e2e.test.js',
   'task-rerun.test.js',
   'inspect.test.js',
+  'controls.test.js',
   'capture.test.js',
   'fact-pack.test.js',
   'markdown-validation.test.js',

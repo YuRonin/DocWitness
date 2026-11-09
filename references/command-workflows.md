@@ -169,6 +169,40 @@ node <skill>/bin/manual.js describe --project-root <项目根> --input <分析�
 }
 ```
 
+#### 定位从静态控件清单里选
+
+`inspect` 会从每个页面的入口与依赖源码里提取控件，写到 `.manual/controls.json`：
+
+```json
+{
+  "locale": "zh-CN",
+  "pages": {
+    "projects": {
+      "controls": [
+        { "id": "ctl-3f2a9c1b7e04", "role": "button", "name": "新建项目", "nameSource": "text", "occurrences": 2, "at": ["app/projects/page.tsx:8", "components/Toolbar.tsx:2"] },
+        { "id": "ctl-6ec8b6906e15", "role": "button", "name": "保存", "nameSource": "i18n:text", "i18nKey": "common.save", "occurrences": 1, "at": ["app/projects/page.tsx:11"] }
+      ],
+      "dynamic": [
+        { "role": "button", "reason": "dynamic-name", "at": "app/projects/page.tsx:14", "partial": "删除" }
+      ]
+    }
+  }
+}
+```
+
+名称取自字面量文字、`aria-label` / `title` / `placeholder`，以及 i18n 调用（`t('k')`、`$t('k')`、`<FormattedMessage id>`、`v-t` 等），后者按项目语言包（`locales/`、`src/locales/`、`src/i18n/`、`src/lang/`、`public/locales/<语言>/<ns>.json` 等目录下的 JSON / YAML / JS / TS）解析成实际文案。JS / TS 语言包只做静态求值、不执行代码：支持对象字面量、展开、顶层常量、`as const` / `satisfies`、`defineMessages(...)` 之类的包装调用，以及项目内的 import（相对路径与 tsconfig 别名）；函数值、运行时拼接和第三方包里的文案求不出来，用到它们的控件归入 `dynamic`。名称含变量、插值或语言包里找不到 key 的控件不猜，列在 `dynamic` 里并附源码位置。
+
+`features[].target`、`guide[].target`、`operations[].targetHint` 以及其中的 `within` / `alternatives` 都**优先写成引用**，不要照源码自己拼控件名（i18n key、图标按钮、变量都会让名称和页面不一致）：
+
+```json
+{ "target": { "control": "ctl-6ec8b6906e15" } }
+{ "targetHint": { "control": "ctl-3f2a9c1b7e04", "within": { "role": "region", "name": "项目卡片" } } }
+```
+
+describe 会把引用换成 `{ role, name, exact: true }` 再写入页面文件。引用的 id 不在本页清单里时拒绝写入，重新 `inspect` 后再选。`occurrences > 1` 的控件在浏览器里很可能不唯一，要加 `within`。只有要用的控件在 `dynamic` 里时，才读源码后手写 `role + name`。手写的名称不在清单里时 describe 输出 `warnings`，提示相近的控件；在 `config.yaml` 设 `inspect.controls.strict: true` 后改为拒绝写入。
+
+`config.yaml` 的 `inspect.controls` 还可以配置：`locale`（多语言项目指定语言，默认优先 zh、再 en）、`localeDirs`（语言包目录）、`components`（项目自定义组件 → 角色，如 `{ PrimaryAction: button }`；组件库常见的 Button / Link / Tabs.TabPane / el-button / a-tab-pane 等已内置）。清单只是写定位时的线索，最终仍要在浏览器里唯一定位才算数。
+
 **用 `--input` 文件而不是命令行参数**——中文内容走命令行在 Windows 控制台容易乱码。单页小改可以用 `--id/--title/--purpose/--actions`。
 
 不该进手册的页面（内部后台、调试页）用 `"includeInManual": false` 标掉；整片路由用 config 的 `inspect.exclude`（如 `/admin/**`）更省事。

@@ -20,6 +20,7 @@ const { createProjectStore } = require('../store/project');
 const { writeText } = require('../util/fsx');
 const { markAffectedTasks } = require('../tasks/staleness');
 const { writeInventory } = require('../annotations/store');
+const { buildControlsSnapshot, writeControls } = require('./controls');
 
 function coded(code, message, extra = {}) {
   const error = new Error(message);
@@ -117,10 +118,15 @@ function refreshModel({ projectRoot, config, prune = false }) {
   // 不可变快照：release 记录 graphRevision，update 据此取回发布时的依赖图
   const graphRevision = writeGraphSnapshot(stateDirAbs, fingerprinted.graph);
   const featureInventory = writeInventory(stateDirAbs, indexPages, staleTasks.tasks);
+  // 静态控件清单：派生数据，随源码重建；describe / layout 用 { control: id } 引用其中的控件
+  const controls = buildControlsSnapshot(projectRoot, result.pages, { settings: config.inspect.controls });
+  const controlsFile = writeControls(stateDirAbs, controls);
+  written.push(controlsFile);
 
   return {
     detected, scan, dependencyWarnings, stateDirAbs, result, fingerprinted, impact, staleTasks,
     prunedIds, pruned, indexPages, meta, graphRevision, written, projectFile, featureInventory, discovery: summary,
+    controls: { file: controlsFile, snapshot: controls },
   };
 }
 

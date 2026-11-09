@@ -107,7 +107,12 @@ function loadConfig(projectRoot) {
       manifestsDir: `${DEFAULTS.stateDir}/artifacts/manifests`,
       ...(raw.artifacts || {}),
     },
-    inspect: { exclude: [], ...(raw.inspect || {}) },
+    inspect: {
+      exclude: [],
+      ...(raw.inspect || {}),
+      // 静态控件清单（src/inspect/controls.js）：语言、语言包目录、自定义组件 → 角色、是否拒绝清单外的手写定位
+      controls: { locale: null, localeDirs: null, components: {}, strict: false, ...(raw.inspect?.controls || {}) },
+    },
     privacy: {
       audience: 'public',
       redaction: 'balanced',
@@ -210,6 +215,15 @@ function loadConfig(projectRoot) {
 
   if (!Array.isArray(config.inspect.exclude)) {
     return { ok: false, errors: ['inspect.exclude 需要是数组。'] };
+  }
+  {
+    const controls = config.inspect.controls;
+    const roles = ['button', 'link', 'tab', 'menuitem', 'checkbox', 'radio', 'switch', 'combobox', 'textbox', 'searchbox', 'option', 'slider', 'treeitem'];
+    if (controls.locale !== null && typeof controls.locale !== 'string') return { ok: false, errors: ['inspect.controls.locale 需要是字符串，如 zh-CN。'] };
+    if (controls.localeDirs !== null && (!Array.isArray(controls.localeDirs) || controls.localeDirs.some((d) => typeof d !== 'string'))) return { ok: false, errors: ['inspect.controls.localeDirs 需要是目录数组（相对项目根）。'] };
+    if (!controls.components || typeof controls.components !== 'object' || Array.isArray(controls.components)
+      || Object.values(controls.components).some((r) => !roles.includes(r))) return { ok: false, errors: [`inspect.controls.components 需要是 { 组件名: 角色 }，角色只能是 ${roles.join(' / ')}。`] };
+    if (typeof controls.strict !== 'boolean') return { ok: false, errors: ['inspect.controls.strict 需要是 true 或 false。'] };
   }
   if (!AUDIENCES.includes(config.privacy.audience)) {
     return { ok: false, errors: ['privacy.audience 需要是 public 或 internal。'] };
